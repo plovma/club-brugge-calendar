@@ -173,6 +173,15 @@ function formatUtcDate(value, fieldName) {
   return date.toISOString().replace(/[-:]/g, "").replace(".000", "");
 }
 
+function formatIcsDate(value, fieldName) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`Match has an invalid ${fieldName}: ${value}`);
+  }
+
+  return date.toISOString().slice(0, 10).replace(/-/g, "");
+}
+
 function escapeIcsText(value) {
   return String(value)
     .replace(/\\/g, "\\\\")
@@ -200,6 +209,10 @@ function createMappedEvent(match) {
   }
 
   const end = new Date(start.getTime() + MATCH_DURATION_MS);
+  const isAllDay = start.getUTCHours() === 0 &&
+    start.getUTCMinutes() === 0 &&
+    start.getUTCSeconds() === 0 &&
+    start.getUTCMilliseconds() === 0;
   const home = getTeamName(match, "HOME");
   const away = getTeamName(match, "AWAY");
   const summary = `${match.competition.abbreviation}: ${home} - ${away}`;
@@ -209,6 +222,12 @@ function createMappedEvent(match) {
     dtstamp: formatUtcDate(new Date(), "current timestamp"),
     start,
     end,
+    isAllDay,
+    startDate: formatIcsDate(start, "startsAtUTC"),
+    endDate: formatIcsDate(
+      isAllDay ? new Date(start.getTime() + 24 * 60 * 60 * 1000) : end,
+      "match end",
+    ),
     startUtc: formatUtcDate(start, "startsAtUTC"),
     endUtc: formatUtcDate(end, "match end"),
     competition: match.competition.abbreviation,
@@ -219,6 +238,18 @@ function createMappedEvent(match) {
 }
 
 function createIcsEvent(event) {
+  if (event.isAllDay) {
+    return [
+      "BEGIN:VEVENT",
+      `UID:${escapeIcsText(event.uid)}`,
+      `DTSTAMP:${event.dtstamp}`,
+      `DTSTART;VALUE=DATE:${event.startDate}`,
+      `DTEND;VALUE=DATE:${event.endDate}`,
+      `SUMMARY:${escapeIcsText(event.summary)}`,
+      "END:VEVENT",
+    ].join("\r\n");
+  }
+
   return [
     "BEGIN:VEVENT",
     `UID:${escapeIcsText(event.uid)}`,
@@ -263,8 +294,8 @@ function createHtmlCalendar(events) {
   const rows = events
     .map(
       (event) => `      <tr>
-        <td>${escapeHtml(event.start.toISOString())}</td>
-        <td>${escapeHtml(event.end.toISOString())}</td>
+        <td>${escapeHtml(event.isAllDay ? "Time TBD" : event.start.toISOString())}</td>
+        <td>${escapeHtml(event.isAllDay ? "Time TBD" : event.end.toISOString())}</td>
         <td>${escapeHtml(event.competition)}</td>
         <td>${escapeHtml(`${event.home} - ${event.away}`)}</td>
         <td>${escapeHtml(event.uid)}</td>
