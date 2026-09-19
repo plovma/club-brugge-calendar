@@ -32,14 +32,14 @@ jobs:
       - name: Check for calendar data changes
         shell: bash
         run: |
-          if git diff --quiet -- calendar-test.html &&
-            test -z "$(git ls-files --others --exclude-standard -- calendar-test.html)"; then
+          if git diff --quiet -- calendar.html &&
+            test -z "$(git ls-files --others --exclude-standard -- calendar.html)"; then
             echo "No calendar data changes."
             exit 0
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add calendar-test.ics calendar-test.html
+          git add calendar.ics calendar.html
           git commit -m "Update generated calendar"
           git push origin "HEAD:${GITHUB_REF_NAME}"
