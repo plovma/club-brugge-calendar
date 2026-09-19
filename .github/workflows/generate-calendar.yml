@@ -3,7 +3,7 @@ name: Generate calendar files
 on:
   workflow_dispatch:
   schedule:
-    - cron: "17 2 * * *"
+    - cron: "0 6 * * *"
 
 permissions:
   contents: write
@@ -24,16 +24,17 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 26
 
       - name: Generate calendar files
         run: node generate-calendar.js
 
-      - name: Commit and push changes
+      - name: Check for calendar data changes
         shell: bash
         run: |
-          if git diff --quiet -- calendar-test.ics calendar-test.html; then
-            echo "No calendar changes to commit."
+          if git diff --quiet -- calendar-test.html &&
+            test -z "$(git ls-files --others --exclude-standard -- calendar-test.html)"; then
+            echo "No calendar data changes."
             exit 0
           fi
 

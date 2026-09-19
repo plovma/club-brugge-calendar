@@ -6,7 +6,7 @@
  * Examples:
  *   node generate-calendar.js
  *   node generate-calendar.js --url https://example/graphql --sha256Hash <hash>
- *   node generate-calendar.js --output calendar-test.ics --html-output calendar-test.html --perPage 50
+ *   node generate-calendar.js --output calendar.ics --html-output calendar.html --perPage 50
  *
  * The URL and hash can also be set with MATCHES_URL and MATCHES_SHA256_HASH.
  */
@@ -16,8 +16,8 @@ const fs = require("node:fs/promises");
 const DEFAULT_URL = "https://d2e3twic1m8a2a.cloudfront.net/graphql";
 const DEFAULT_SHA256_HASH =
   "4b77290ab94dc208967168a2fc4d9b902327e68691379af625b340c68cc04c2a";
-const DEFAULT_OUTPUT = "calendar-test.ics";
-const DEFAULT_HTML_OUTPUT = "calendar-test.html";
+const DEFAULT_OUTPUT = "./public/calendar.ics";
+const DEFAULT_HTML_OUTPUT = "./public/calendar.html";
 const DEFAULT_PER_PAGE = 20;
 const MATCH_DURATION_MS = 2 * 60 * 60 * 1000;
 
