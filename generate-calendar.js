@@ -290,12 +290,16 @@ function escapeHtml(value) {
   );
 }
 
+function formatHtmlDate(date) {
+  return date.toISOString().slice(0, 10);
+}
+
 function createHtmlCalendar(events) {
   const rows = events
     .map(
       (event) => `      <tr>
-        <td>${escapeHtml(event.isAllDay ? "Time TBD" : event.start.toISOString())}</td>
-        <td>${escapeHtml(event.isAllDay ? "Time TBD" : event.end.toISOString())}</td>
+        <td>${escapeHtml(event.isAllDay ? `${formatHtmlDate(event.start)} (Time TBD)` : event.start.toISOString())}</td>
+        <td>${escapeHtml(event.isAllDay ? `${formatHtmlDate(event.start)} (Time TBD)` : event.end.toISOString())}</td>
         <td>${escapeHtml(event.competition)}</td>
         <td>${escapeHtml(`${event.home} - ${event.away}`)}</td>
         <td>${escapeHtml(event.uid)}</td>
