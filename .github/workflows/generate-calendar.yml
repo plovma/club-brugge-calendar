@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 concurrency:
   group: generate-calendar-${{ github.ref }}
@@ -14,6 +16,8 @@ concurrency:
 
 jobs:
   generate:
+    outputs:
+      changed: ${{ steps.calendar_changes.outputs.changed }}
     runs-on: ubuntu-latest
     steps:
       - name: Check out triggering branch
@@ -30,10 +34,12 @@ jobs:
         run: node generate-calendar.js
 
       - name: Check for calendar data changes
+        id: calendar_changes
         shell: bash
         run: |
           if git diff --quiet -- public/calendar.html; then
             echo "No calendar data changes."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -42,3 +48,12 @@ jobs:
           git add public/calendar.ics public/calendar.html
           git commit -m "Update generated calendar"
           git push origin "HEAD:${GITHUB_REF_NAME}"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: generate
+    if: needs.generate.outputs.changed == 'true' && github.ref_name == 'main'
+    uses: ./.github/workflows/deploy-pages-reusable.yml
+    with:
+      ref: main
+    secrets: inherit
