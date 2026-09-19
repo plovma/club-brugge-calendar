@@ -1,0 +1,44 @@
+name: Generate calendar files
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 2 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: generate-calendar-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out triggering branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Generate calendar files
+        run: node generate-calendar.js
+
+      - name: Commit and push changes
+        shell: bash
+        run: |
+          if git diff --quiet -- calendar-test.ics calendar-test.html; then
+            echo "No calendar changes to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add calendar-test.ics calendar-test.html
+          git commit -m "Update generated calendar"
+          git push origin "HEAD:${GITHUB_REF_NAME}"

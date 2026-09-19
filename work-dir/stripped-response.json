@@ -1,0 +1,38 @@
+{
+  "data": {
+    "matches": {
+      "items": [
+        {
+          "slug": "clu-gnk-20-09-2026",
+          "startsAtUTC": "2026-09-20T16:30:00.000Z",
+          "status": "UPCOMING",
+          "competition": {
+            "title": "Jupiler Pro League",
+            "abbreviation": "JPL"
+          },
+          "teams": [
+            {
+              "type": "HOME",
+              "team": {
+                "name": "Club Brugge",
+                "abbreviation": "CLUB"
+              }
+            },
+            {
+              "type": "AWAY",
+              "team": {
+                "name": "KRC Genk",
+                "abbreviation": "GNK"
+              }
+            }
+          ],
+        }
+      ],
+      "paginationInfo": {
+        "page": 1,
+        "perPage": 20,
+        "total": 35
+      }
+    }
+  }
+}
