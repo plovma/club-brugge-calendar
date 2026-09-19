@@ -1,0 +1,5 @@
+UID=data/matches/items[]/slug
+DTSTAMP=update-date-time(so 'now')
+DTSTART=data/matches/items[]/startsAtUTC (keep in mind i'm currently in UTC+2 - or UTC+1 depending on daylight saving time)
+DTEND=data/matches/items[]/startsAtUTC (incl. timezone change) + 2 hours (duration of the match)
+SUMMARY=data/matches/items[]/competition/abbreviation: data/matches/items[]/teams[]/team[type=HOME]/abbreviation - data/matches/items[]/teams[]/team[type=AWAY]/abbreviation

@@ -1,0 +1,24 @@
+POST https://d2e3twic1m8a2a.cloudfront.net/graphql
+Content-Type: application/json
+
+{
+  "operationName": "GetMatches",
+  "variables": {
+    "competition": null,
+    "clubbruggeTeam": {
+      "slug": "a-kern"
+    },
+    "played": false,
+    "forStandings": false,
+    "pageFilter": {
+      "page": 1,
+      "perPage": 20
+    }
+  },
+  "extensions": {
+    "persistedQuery": {
+      "version": 1,
+      "sha256Hash": "4b77290ab94dc208967168a2fc4d9b902327e68691379af625b340c68cc04c2a"
+    }
+  }
+}
