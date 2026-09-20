@@ -215,7 +215,9 @@ function createMappedEvent(match) {
     start.getUTCMilliseconds() === 0;
   const home = getTeamName(match, "HOME");
   const away = getTeamName(match, "AWAY");
-  const summary = `${match.competition.abbreviation}: ${home} - ${away}`;
+  const isClubBruggeHome = home === "Club Brugge";
+  const locationMarker = isClubBruggeHome ? "⌂" : "↗";
+  const summary = `${locationMarker} ${match.competition.abbreviation}: ${home} - ${away}`;
 
   return {
     uid: match.slug,
@@ -233,6 +235,7 @@ function createMappedEvent(match) {
     competition: match.competition.abbreviation,
     home,
     away,
+    locationMarker,
     summary,
   };
 }
@@ -298,6 +301,7 @@ function createHtmlCalendar(events) {
   const rows = events
     .map(
       (event) => `      <tr>
+        <td aria-label="${event.locationMarker === "⌂" ? "Home" : "Away"}">${escapeHtml(event.locationMarker)}</td>
         <td>${escapeHtml(event.isAllDay ? `${formatHtmlDate(event.start)} (Time TBD)` : event.start.toISOString())}</td>
         <td>${escapeHtml(event.isAllDay ? `${formatHtmlDate(event.start)} (Time TBD)` : event.end.toISOString())}</td>
         <td>${escapeHtml(event.competition)}</td>
@@ -326,6 +330,7 @@ function createHtmlCalendar(events) {
     <caption>Matches in UTC</caption>
     <thead>
       <tr>
+        <th scope="col">Location</th>
         <th scope="col">Start (UTC)</th>
         <th scope="col">End (UTC)</th>
         <th scope="col">Competition</th>
