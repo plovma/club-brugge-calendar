@@ -20,6 +20,35 @@ const DEFAULT_OUTPUT = "./public/calendar.ics";
 const DEFAULT_HTML_OUTPUT = "./public/calendar.html";
 const DEFAULT_PER_PAGE = 20;
 const MATCH_DURATION_MS = 2 * 60 * 60 * 1000;
+const MAX_ERROR_DETAIL_LENGTH = 500;
+
+function errorDetail(value) {
+  const text = typeof value === "string" ? value : JSON.stringify(value) ?? String(value);
+  const sanitized = text.replace(/[\u0000-\u001F\u007F]/g, " ").trim();
+  if (sanitized.length <= MAX_ERROR_DETAIL_LENGTH) {
+    return sanitized;
+  }
+  return `${sanitized.slice(0, MAX_ERROR_DETAIL_LENGTH)}... [truncated]`;
+}
+
+function endpointLabel(value) {
+  try {
+    const url = new URL(value);
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return "<configured endpoint>";
+  }
+}
+
+function formatError(error) {
+  const lines = [error.stack ?? `${error.name}: ${error.message}`];
+  let cause = error.cause;
+  while (cause) {
+    lines.push(`Caused by: ${cause.stack ?? `${cause.name}: ${cause.message}`}`);
+    cause = cause.cause;
+  }
+  return lines.join("\n");
+}
 
 function parseArguments(argv) {
   const options = {};
@@ -96,45 +125,88 @@ function createRequestBody(sha256Hash, page, perPage) {
 }
 
 async function fetchPage(configuration, page) {
-  const response = await fetch(configuration.url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(
-      createRequestBody(configuration.sha256Hash, page, configuration.perPage),
-    ),
-  });
+  const endpoint = endpointLabel(configuration.url);
+  const requestStartedAt = Date.now();
+  console.log(`[request] Page ${page}: POST ${endpoint}`);
 
-  const responseText = await response.text();
+  let response;
+  try {
+    response = await fetch(configuration.url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(
+        createRequestBody(configuration.sha256Hash, page, configuration.perPage),
+      ),
+    });
+  } catch (error) {
+    throw new Error(
+      `Network request failed for page ${page} at ${endpoint} after ${Date.now() - requestStartedAt} ms: ${error.message}`,
+      { cause: error },
+    );
+  }
+
+  let responseText;
+  try {
+    responseText = await response.text();
+  } catch (error) {
+    throw new Error(
+      `Could not read response for page ${page} from ${endpoint} (HTTP ${response.status}, after ${Date.now() - requestStartedAt} ms): ${error.message}`,
+      { cause: error },
+    );
+  }
+
   let payload;
+  if (!response.ok) {
+    try {
+      payload = JSON.parse(responseText);
+    } catch {
+      payload = null;
+    }
+    const errorDetails = payload?.errors
+      ? `; GraphQL errors: ${errorDetail(payload.errors)}`
+      : `; response: ${errorDetail(responseText || "<empty body>")}`;
+    throw new Error(
+      `Request for page ${page} failed at ${endpoint} with HTTP ${response.status} ${response.statusText} after ${Date.now() - requestStartedAt} ms${errorDetails}`,
+    );
+  }
+
   try {
     payload = JSON.parse(responseText);
-  } catch {
-    throw new Error(`The server returned invalid JSON for page ${page}`);
+  } catch (error) {
+    throw new Error(
+      `Invalid JSON in response for page ${page} from ${endpoint} (HTTP ${response.status}, content-type: ${response.headers.get("content-type") ?? "unknown"}); response: ${errorDetail(responseText || "<empty body>")}`,
+      { cause: error },
+    );
   }
 
-  if (!response.ok) {
-    const errorDetails = payload.errors
-      ? `: ${JSON.stringify(payload.errors)}`
-      : "";
-    throw new Error(`Request for page ${page} failed with HTTP ${response.status}${errorDetails}`);
+  if (Array.isArray(payload?.errors) && payload.errors.length > 0) {
+    throw new Error(
+      `GraphQL request failed for page ${page} at ${endpoint}: ${errorDetail(payload.errors)}`,
+    );
   }
 
-  if (Array.isArray(payload.errors) && payload.errors.length > 0) {
-    throw new Error(`GraphQL request for page ${page} failed: ${JSON.stringify(payload.errors)}`);
-  }
-
-  const matches = payload.data?.matches;
+  const matches = payload?.data?.matches;
   if (
     !matches ||
     !Array.isArray(matches.items) ||
     !matches.paginationInfo ||
-    !Number.isInteger(matches.paginationInfo.total)
+    !Number.isInteger(matches.paginationInfo.total) ||
+    matches.paginationInfo.total < 0
   ) {
-    throw new Error(`Response for page ${page} does not contain the expected matches structure`);
+    const topLevelFields =
+      payload && typeof payload === "object"
+        ? Object.keys(payload).join(", ") || "<none>"
+        : `<${payload === null ? "null" : typeof payload}>`;
+    throw new Error(
+      `Unexpected response structure for page ${page} from ${endpoint}; expected data.matches.items[] and a non-negative integer paginationInfo.total. Top-level fields: ${topLevelFields}`,
+    );
   }
 
+  console.log(
+    `[request] Page ${page}: HTTP ${response.status} in ${Date.now() - requestStartedAt} ms; received ${matches.items.length} item(s); total reported: ${matches.paginationInfo.total}`,
+  );
   return matches;
 }
 
@@ -144,14 +216,26 @@ async function fetchAllMatches(configuration) {
   let total = null;
 
   while (total === null || items.length < total) {
-    const result = await fetchPage(configuration, page);
+    let result;
+    try {
+      result = await fetchPage(configuration, page);
+    } catch (error) {
+      throw new Error(
+        `Failed while retrieving matches (page ${page}; collected ${items.length}${total === null ? "" : ` of ${total}`}): ${error.message}`,
+        { cause: error },
+      );
+    }
     total ??= result.paginationInfo.total;
 
     if (result.paginationInfo.total !== total) {
-      throw new Error("The total item count changed while retrieving pages");
+      throw new Error(
+        `Pagination total changed on page ${page}: expected ${total}, received ${result.paginationInfo.total} after collecting ${items.length} item(s)`,
+      );
     }
     if (result.items.length === 0 && items.length < total) {
-      throw new Error(`Page ${page} returned no items before all matches were retrieved`);
+      throw new Error(
+        `Page ${page} returned no items before retrieval was complete (${items.length} of ${total} collected; page size ${configuration.perPage})`,
+      );
     }
 
     items.push(...result.items);
@@ -161,6 +245,7 @@ async function fetchAllMatches(configuration) {
     page += 1;
   }
 
+  console.log(`[matches] Retrieved all ${items.length} match(es).`);
   return items;
 }
 
@@ -193,19 +278,29 @@ function escapeIcsText(value) {
 function getTeamName(match, type) {
   const team = match.teams?.find((entry) => entry.type === type)?.team;
   if (!team?.name) {
-    throw new Error(`Match ${match.slug ?? "<unknown>"} has no ${type} team name`);
+    throw new Error(
+      `Match ${match.slug ?? "<unknown>"} has no ${type} team name; available team types: ${match.teams?.map((entry) => entry.type).join(", ") || "<none>"}`,
+    );
   }
   return team.name;
 }
 
 function createMappedEvent(match) {
-  if (!match.slug || !match.startsAtUTC || !match.competition?.abbreviation) {
-    throw new Error("Match is missing slug, startsAtUTC, or competition abbreviation");
+  const missingFields = [];
+  if (!match?.slug) missingFields.push("slug");
+  if (!match?.startsAtUTC) missingFields.push("startsAtUTC");
+  const competition =
+    match?.competition?.abbreviation?.trim() || match?.competition?.title?.trim();
+  if (!competition) missingFields.push("competition.abbreviation or competition.title");
+  if (missingFields.length > 0) {
+    throw new Error(
+      `Match ${match?.slug ?? "<unknown>"} is missing required field(s): ${missingFields.join(", ")}`,
+    );
   }
 
   const start = new Date(match.startsAtUTC);
   if (Number.isNaN(start.getTime())) {
-    throw new Error(`Match ${match.slug} has an invalid startsAtUTC value`);
+    throw new Error(`Match ${match.slug} has invalid startsAtUTC "${errorDetail(match.startsAtUTC)}"`);
   }
 
   const end = new Date(start.getTime() + MATCH_DURATION_MS);
@@ -217,7 +312,7 @@ function createMappedEvent(match) {
   const away = getTeamName(match, "AWAY");
   const isClubBruggeHome = home === "Club Brugge";
   const locationMarker = isClubBruggeHome ? "⌂" : "↗";
-  const summary = `${locationMarker} ${match.competition.abbreviation}: ${home} - ${away}`;
+  const summary = `${locationMarker} ${competition}: ${home} - ${away}`;
 
   return {
     uid: match.slug,
@@ -232,7 +327,7 @@ function createMappedEvent(match) {
     ),
     startUtc: formatUtcDate(start, "startsAtUTC"),
     endUtc: formatUtcDate(end, "match end"),
-    competition: match.competition.abbreviation,
+    competition,
     home,
     away,
     locationMarker,
@@ -349,18 +444,42 @@ ${rows}
 
 async function main() {
   const configuration = getConfiguration();
-  const matches = await fetchAllMatches(configuration);
-  const events = matches.map(createMappedEvent);
-  await Promise.all([
-    fs.writeFile(configuration.output, createCalendar(events), "utf8"),
-    fs.writeFile(configuration.htmlOutput, createHtmlCalendar(events), "utf8"),
-  ]);
   console.log(
-    `Wrote ${matches.length} matches to ${configuration.output} and ${configuration.htmlOutput}`,
+    `[start] Endpoint: ${endpointLabel(configuration.url)}; page size: ${configuration.perPage}; output: ${configuration.output}; HTML: ${configuration.htmlOutput}`,
   );
+  const matches = await fetchAllMatches(configuration);
+  console.log(`[mapping] Converting ${matches.length} match(es) to calendar events.`);
+  const events = matches.map((match, index) => {
+    try {
+      return createMappedEvent(match);
+    } catch (error) {
+      throw new Error(
+        `Could not map match ${index + 1} of ${matches.length} (slug: ${match.slug ?? "<missing>"}): ${error.message}`,
+        { cause: error },
+      );
+    }
+  });
+
+  const outputs = [
+    [configuration.output, createCalendar(events), "ICS"],
+    [configuration.htmlOutput, createHtmlCalendar(events), "HTML"],
+  ];
+  await Promise.all(
+    outputs.map(async ([path, content, format]) => {
+      try {
+        await fs.writeFile(path, content, "utf8");
+      } catch (error) {
+        throw new Error(`Could not write ${format} calendar to "${path}": ${error.message}`, {
+          cause: error,
+        });
+      }
+      console.log(`[output] Wrote ${format} calendar to ${path}`);
+    }),
+  );
+  console.log(`[done] Generated calendars for ${matches.length} match(es).`);
 }
 
 main().catch((error) => {
-  console.error(`Unable to generate calendar: ${error.message}`);
+  console.error(`Unable to generate calendar:\n${formatError(error)}`);
   process.exitCode = 1;
 });
